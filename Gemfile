@@ -16,6 +16,7 @@ gem "turbo-rails"
 gem "stimulus-rails"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 gem "jbuilder"
+gem 'sidekiq'
 
 gem 'oauth2'
 gem 'dotenv-rails', groups: [:development, :test]
