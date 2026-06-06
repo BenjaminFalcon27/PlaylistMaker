@@ -1,4 +1,5 @@
 module Spotify
+  # Thin wrapper around the Spotify Web API. Requires a valid Bearer token.
   class ClientService
     BASE_URL = 'https://api.spotify.com/v1'
 
@@ -11,11 +12,10 @@ module Spotify
     end
 
     def liked_tracks(limit: 50, offset: 0)
-      response = get('/me/tracks', limit: limit, offset: offset)
-      Rails.logger.debug "Spotify response: #{response.inspect}"
-      response
+      get('/me/tracks', limit: limit, offset: offset)
     end
 
+    # Paginates through all pages and returns every liked track.
     def all_liked_tracks
       tracks = []
       offset = 0
@@ -34,6 +34,7 @@ module Spotify
       post("/users/#{user_id}/playlists", { name: name, description: description, public: false })
     end
 
+    # Spotify accepts at most 100 track URIs per request, so we batch automatically.
     def add_tracks_to_playlist(playlist_id, track_uris)
       track_uris.each_slice(100) do |batch|
         post("/playlists/#{playlist_id}/tracks", { uris: batch })

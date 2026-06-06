@@ -15,6 +15,7 @@ module SpotifyAuthenticable
     redirect_to '/auth/spotify' unless current_user
   end
 
+  # Returns a client with a fresh token, refreshing automatically when expired.
   def spotify_client
     refresh_token_if_needed!
     @spotify_client ||= Spotify::ClientService.new(current_user.spotify_token)

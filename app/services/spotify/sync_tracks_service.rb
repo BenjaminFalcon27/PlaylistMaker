@@ -1,10 +1,12 @@
 module Spotify
+  # Fetches liked tracks added since the user's last sync and persists them.
   class SyncTracksService
     def initialize(user)
       @user = user
       @client = Spotify::ClientService.new(user.spotify_token)
     end
 
+    # Returns the number of newly synced tracks.
     def call
       tracks = fetch_new_tracks
       upsert_tracks(tracks)
@@ -14,6 +16,7 @@ module Spotify
 
     private
 
+    # Stops paginating as soon as it hits a track older than last_synced_at.
     def fetch_new_tracks
       tracks = []
       offset = 0

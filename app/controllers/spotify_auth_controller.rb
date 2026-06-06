@@ -1,8 +1,9 @@
 class SpotifyAuthController < ApplicationController
   SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize'
   SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token'
+  # All scopes required for reading liked tracks, user profile, and managing playlists.
   SCOPES = 'user-library-read user-read-private user-read-email playlist-modify-public playlist-modify-private user-top-read user-read-recently-played'
-  
+
   def authorize
     params = {
       client_id: ENV['SPOTIFY_CLIENT_ID'],
