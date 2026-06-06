@@ -1,8 +1,12 @@
 class TracksController < ApplicationController
   include SpotifyAuthenticable
 
+  def sync
+    SyncTracksJob.perform_later(current_user.id)
+    render json: { status: 'queued' }
+  end
+
   def liked
-    tracks = spotify_client.all_liked_tracks
-    render json: { total: tracks.size, tracks: tracks }
+    render json: { total: current_user.tracks.count, tracks: current_user.tracks }
   end
 end
