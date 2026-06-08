@@ -19,6 +19,25 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://postgres:password@db/spotify_playlist_dev
+      REDIS_URL: redis://redis:6379/0
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  sidekiq:
+    build: .
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db/spotify_playlist_dev
+      REDIS_URL: redis://redis:6379/0
+    command: bundle exec sidekiq
 volumes:
   postgres_data:

@@ -46,10 +46,21 @@ module Spotify
     def get(path, params = {})
       uri = URI("#{BASE_URL}#{path}")
       uri.query = URI.encode_www_form(params) if params.any?
-      req = Net::HTTP::Get.new(uri)
-      req['Authorization'] = "Bearer #{@token}"
-      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
-      JSON.parse(response.body)
+
+      loop do
+        req = Net::HTTP::Get.new(uri)
+        req['Authorization'] = "Bearer #{@token}"
+        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
+
+        if response.code == '429'
+          retry_after = response['Retry-After']&.to_i || 5
+          Rails.logger.warn "Spotify rate limit hit, sleeping #{retry_after}s"
+          sleep(retry_after)
+          next
+        end
+
+        return JSON.parse(response.body)
+      end
     end
 
     def post(path, body)
