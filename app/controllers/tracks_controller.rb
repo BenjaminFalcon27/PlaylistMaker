@@ -1,6 +1,11 @@
 class TracksController < ApplicationController
   include SpotifyAuthenticable
 
+  def full_sync
+    FullSyncTracksJob.perform_later(current_user.id)
+    render json: { status: 'queued' }
+  end
+
   def sync
     SyncTracksJob.perform_later(current_user.id)
     render json: { status: 'queued' }

@@ -4,4 +4,5 @@ Rails.application.routes.draw do
   get '/tracks/liked', to: 'tracks#liked'
   post '/tracks/sync', to: 'tracks#sync'
   get '/tracks/sync', to: 'tracks#sync'
+  get '/tracks/full_sync', to: 'tracks#full_sync'
 end

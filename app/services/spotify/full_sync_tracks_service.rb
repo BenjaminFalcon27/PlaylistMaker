@@ -1,5 +1,5 @@
 module Spotify
-  class SyncTracksService
+  class FullSyncTracksService
     def initialize(user)
       @user = user
       refresh_token_if_needed!
@@ -7,38 +7,34 @@ module Spotify
     end
 
     def call
-      tracks = fetch_new_tracks
-      upsert_tracks(tracks)
-      if tracks.any?
-        last_added_at = tracks.map { |i| Time.parse(i['added_at']) }.max
-        @user.update!(last_synced_at: last_added_at)
-      end
-      tracks.size
+      spotify_ids = fetch_all_spotify_ids
+      upsert_all_tracks(spotify_ids[:items])
+      purge_unliked(spotify_ids[:ids])
+      @user.update!(last_synced_at: Time.now)
     end
 
     private
 
-    def fetch_new_tracks
-      tracks = []
+    def fetch_all_spotify_ids
+      items = []
+      ids = []
       offset = 0
       loop do
         response = @client.liked_tracks(limit: 50, offset: offset)
-        items = response['items']
-        break unless items&.any?
-        new_items = items.select do |item|
-          added_at = Time.parse(item['added_at'])
-          @user.last_synced_at.nil? || added_at >= @user.last_synced_at
-        end
-        tracks += new_items
+        Rails.logger.debug "Spotify response total: #{response['total']}, items: #{response['items']&.size}"
+        batch = response['items']
+        break unless batch&.any?
+        items += batch
+        ids += batch.filter_map { |i| i.dig('track', 'id') }
         sleep(0.1)
-        break if new_items.size < items.size
-        break if tracks.size >= response['total']
+        break if items.size >= response['total']
         offset += 50
       end
-      tracks
+      Rails.logger.debug "Total fetched: #{items.size}, ids: #{ids.size}"
+      { items: items, ids: ids }
     end
 
-    def upsert_tracks(items)
+    def upsert_all_tracks(items)
       records = items.filter_map do |item|
         t = item['track']
         next unless t && t['id']
@@ -59,6 +55,10 @@ module Spotify
         }
       end
       Track.upsert_all(records, unique_by: :spotify_id) if records.any?
+    end
+
+    def purge_unliked(spotify_ids)
+      @user.tracks.where.not(spotify_id: spotify_ids).destroy_all
     end
 
     def refresh_token_if_needed!
