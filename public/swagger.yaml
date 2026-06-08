@@ -1,0 +1,281 @@
+openapi: "3.0.3"
+info:
+  title: PlaylistMaker API
+  version: "1.0"
+  description: |
+    Spotify playlist generator by genre.
+
+    **Authentication**: all endpoints except `GET /auth/spotify` require a valid session cookie.
+    Open `/auth/spotify` in your browser first, complete the Spotify OAuth flow, then use the API.
+
+servers:
+  - url: https://playlistmaker-api.btrls.fr
+    description: Production
+  - url: http://localhost:3000
+    description: Local
+
+tags:
+  - name: Authentication
+  - name: Tracks
+  - name: Classifiers
+  - name: Playlists
+
+components:
+  schemas:
+    Queued:
+      type: object
+      properties:
+        status:
+          type: string
+          example: queued
+
+    Track:
+      type: object
+      properties:
+        id:
+          type: integer
+        spotify_id:
+          type: string
+        title:
+          type: string
+        artist_name:
+          type: string
+        artist_id:
+          type: string
+        album_name:
+          type: string
+        added_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        popularity:
+          type: integer
+        release_date:
+          type: string
+        preview_url:
+          type: string
+          nullable: true
+        genres:
+          type: array
+          items:
+            type: string
+          nullable: true
+
+    TrackSample:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        artist_name:
+          type: string
+
+    GenreGroup:
+      type: object
+      properties:
+        count:
+          type: integer
+        sample:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackSample'
+
+paths:
+  /auth/spotify:
+    get:
+      summary: Redirect to Spotify OAuth
+      description: Initiates the Spotify OAuth flow. Opens the Spotify authorization page in the browser.
+      tags: [Authentication]
+      security: []
+      responses:
+        '302':
+          description: Redirect to Spotify authorization page
+
+  /tracks/liked:
+    get:
+      summary: List all liked tracks
+      description: Returns all tracks synced from the user's Spotify library.
+      tags: [Tracks]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 4223
+                  tracks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Track'
+        '302':
+          description: Redirect to /auth/spotify if not authenticated
+
+  /tracks/full_sync:
+    get:
+      summary: Queue a full sync
+      description: |
+        Enqueues a Sidekiq job that fetches all liked tracks from Spotify,
+        upserts them in the database, and purges any unliked tracks.
+      tags: [Tracks]
+      responses:
+        '200':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queued'
+
+  /tracks/sync:
+    get:
+      summary: Queue an incremental sync
+      description: Enqueues a Sidekiq job that fetches only tracks added since `last_synced_at`.
+      tags: [Tracks]
+      responses:
+        '200':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queued'
+
+  /tracks/fetch_genres:
+    get:
+      summary: Queue genre fetch
+      description: |
+        Enqueues a Sidekiq job that fetches genres for all tracks with a `null` genres field.
+        Genres are fetched from the Last.fm API (grouped by artist, ~200ms per artist).
+        Poll `/tracks/genres_status` to track progress.
+      tags: [Tracks]
+      responses:
+        '200':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queued'
+
+  /tracks/genres_status:
+    get:
+      summary: Genre fill status
+      description: Returns how many tracks have genres filled vs still null.
+      tags: [Tracks]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 4223
+                  with_genres:
+                    type: integer
+                    example: 4208
+                  without_genres:
+                    type: integer
+                    example: 15
+
+  /classifiers/stats:
+    get:
+      summary: Genre distribution
+      description: Returns all genres sorted by track count descending. Use this to pick categories for playlist generation.
+      tags: [Classifiers]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_with_genre:
+                    type: integer
+                    example: 3806
+                  total_without_genre:
+                    type: integer
+                    example: 417
+                  genre_count:
+                    type: integer
+                    example: 267
+                  distribution:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      cloud rap: 345
+                      hip-hop: 283
+                      rap: 273
+                      rock: 115
+
+  /classifiers/preview:
+    get:
+      summary: Preview genre groups
+      description: |
+        Groups all tracks by their primary genre and returns a count + 3-track sample per group.
+        Does not create any Spotify playlists.
+      tags: [Classifiers]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/GenreGroup'
+                example:
+                  cloud rap:
+                    count: 345
+                    sample:
+                      - id: 1
+                        title: "some track"
+                        artist_name: "some artist"
+
+  /playlists/generate:
+    post:
+      summary: Generate Spotify playlists by genre
+      description: |
+        For each category in the request body:
+        1. Creates a private Spotify playlist named after the genre
+        2. Adds all matching tracks to the playlist
+        3. Saves the playlist and its tracks in the database (`generated_playlists`, `playlist_tracks`)
+
+        Use `/classifiers/stats` or `/classifiers/preview` to pick the categories beforehand.
+      tags: [Playlists]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categories]
+              properties:
+                categories:
+                  type: array
+                  items:
+                    type: string
+                  example: ["cloud rap", "rock", "metalcore"]
+      responses:
+        '200':
+          description: Playlists created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: generated
+                  categories:
+                    type: array
+                    items:
+                      type: string
+                    example: ["cloud rap", "rock", "metalcore"]
